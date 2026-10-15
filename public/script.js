@@ -25,12 +25,14 @@ function renderProjects() {
     const projectName = document.createElement('span');
     const projectStatus = document.createElement('span');
     const editButton = document.createElement('button');
+    const deleteButton = document.createElement('button');
 
     projectName.textContent = project.name;
     projectStatus.textContent = ` — ${project.status}`;
 
     editButton.type = 'button';
     editButton.textContent = 'Edit';
+
     editButton.addEventListener('click', () => {
       editingId = project.id;
       nameInput.value = project.name;
@@ -42,11 +44,42 @@ function renderProjects() {
       nameInput.focus();
     });
 
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Delete';
+
+    deleteButton.addEventListener('click', () => {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${project.name}"?`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const projectIndex = projects.findIndex(
+        item => item.id === project.id
+      );
+
+      if (projectIndex === -1) {
+        return;
+      }
+
+      projects.splice(projectIndex, 1);
+
+      if (editingId === project.id) {
+        resetForm();
+      }
+
+      renderProjects();
+    });
+
     listItem.append(
       projectName,
       projectStatus,
       document.createTextNode(' '),
-      editButton
+      editButton,
+      document.createTextNode(' '),
+      deleteButton
     );
 
     projectList.appendChild(listItem);
@@ -66,11 +99,13 @@ form.addEventListener('submit', event => {
   if (!name) {
     nameInput.setCustomValidity('Please enter a project name.');
     nameInput.reportValidity();
+
     nameInput.addEventListener(
       'input',
       () => nameInput.setCustomValidity(''),
       { once: true }
     );
+
     return;
   }
 
