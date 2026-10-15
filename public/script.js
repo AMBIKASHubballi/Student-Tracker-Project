@@ -6,8 +6,42 @@ const emptyState = document.querySelector('#empty-state');
 const saveButton = document.querySelector('#save-button');
 const cancelButton = document.querySelector('#cancel-button');
 
-const projects = [];
+const STORAGE_KEY = 'workshop-projects-v1';
+
+function loadProjects() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(item =>
+      item && item.id !== undefined &&
+      typeof item.name === 'string' &&
+      typeof item.status === 'string'
+    );
+  } catch (error) {
+    console.error('Could not read saved projects:', error);
+    return [];
+  }
+}
+
+function saveProjects() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  } catch (error) {
+    console.error('Could not save projects:', error);
+  }
+}
+
+const projects = loadProjects();
 let editingId = null;
+
+function createId() {
+  if (window.crypto && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return String(Date.now()) + Math.random().toString(16).slice(2);
+}
 
 function resetForm() {
   form.reset();
@@ -37,7 +71,6 @@ function renderProjects() {
       editingId = project.id;
       nameInput.value = project.name;
       statusInput.value = project.status;
-
       saveButton.textContent = 'Save changes';
       cancelButton.hidden = false;
       nameInput.setCustomValidity('');
@@ -70,6 +103,7 @@ function renderProjects() {
         resetForm();
       }
 
+      saveProjects();
       renderProjects();
     });
 
@@ -109,9 +143,7 @@ form.addEventListener('submit', event => {
     return;
   }
 
-  nameInput.setCustomValidity('');
-
-  if (editingId !== null) {
+  if (editingId) {
     const project = projects.find(item => item.id === editingId);
 
     if (project) {
@@ -120,12 +152,13 @@ form.addEventListener('submit', event => {
     }
   } else {
     projects.push({
-      id: crypto.randomUUID(),
-      name: name,
-      status: status
+      id: createId(),
+      name,
+      status
     });
   }
 
+  saveProjects();
   renderProjects();
   resetForm();
 });
@@ -133,3 +166,5 @@ form.addEventListener('submit', event => {
 cancelButton.addEventListener('click', () => {
   resetForm();
 });
+
+renderProjects();
