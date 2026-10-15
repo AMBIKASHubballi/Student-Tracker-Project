@@ -5,42 +5,43 @@ const projectList = document.querySelector('#project-list');
 const emptyState = document.querySelector('#empty-state');
 const saveButton = document.querySelector('#save-button');
 const cancelButton = document.querySelector('#cancel-button');
+const messageBox = document.querySelector('#message');
 
-const STORAGE_KEY = 'workshop-projects-v1';
+const API_URL = '/api/projects';
+const UPDATE_METHOD = 'PUT'; // change to 'PATCH' if your app.js uses app.patch
 
-function loadProjects() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(item =>
-      item && item.id !== undefined &&
-      typeof item.name === 'string' &&
-      typeof item.status === 'string'
-    );
-  } catch (error) {
-    console.error('Could not read saved projects:', error);
-    return [];
-  }
-}
-
-function saveProjects() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-  } catch (error) {
-    console.error('Could not save projects:', error);
-  }
-}
-
-const projects = loadProjects();
+let projects = [];
 let editingId = null;
 
-function createId() {
-  if (window.crypto && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+function showMessage(text) {
+  if (messageBox) {
+    messageBox.textContent = text;
   }
-  return String(Date.now()) + Math.random().toString(16).slice(2);
+}
+
+async function request(url, options) {
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const data = await response.json();
+      detail = data.error || data.message || '';
+    } catch (error) {
+      // response had no JSON body
+    }
+    throw new Error(detail || `Request failed (${response.status})`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  try {
+    return await response.json();
+  } catch (error) {
+    return null;
+  }
 }
 
 function resetForm() {
@@ -80,7 +81,7 @@ function renderProjects() {
     deleteButton.type = 'button';
     deleteButton.textContent = 'Delete';
 
-    deleteButton.addEventListener('click', () => {
+    deleteButton.addEventListener('click', async () => {
       const confirmed = window.confirm(
         `Are you sure you want to delete "${project.name}"?`
       );
@@ -89,22 +90,18 @@ function renderProjects() {
         return;
       }
 
-      const projectIndex = projects.findIndex(
-        item => item.id === project.id
-      );
+      try {
+        await request(`${API_URL}/${project.id}`, { method: 'DELETE' });
 
-      if (projectIndex === -1) {
-        return;
+        if (editingId === project.id) {
+          resetForm();
+        }
+
+        await loadProjects();
+        showMessage('Project deleted.');
+      } catch (error) {
+        showMessage(`Could not delete project: ${error.message}`);
       }
-
-      projects.splice(projectIndex, 1);
-
-      if (editingId === project.id) {
-        resetForm();
-      }
-
-      saveProjects();
-      renderProjects();
     });
 
     listItem.append(
@@ -124,7 +121,25 @@ function renderProjects() {
   }
 }
 
-form.addEventListener('submit', event => {
+async function loadProjects() {
+  showMessage('Loading projects...');
+
+  try {
+    const data = await request(API_URL);
+    projects = Array.isArray(data) ? data : [];
+    renderProjects();
+    showMessage('');
+  } catch (error) {
+    projects = [];
+    renderProjects();
+    if (emptyState) {
+      emptyState.hidden = true; // a failed load is not an empty database
+    }
+    showMessage(`Could not load projects: ${error.message}`);
+  }
+}
+
+form.addEventListener('submit', async event => {
   event.preventDefault();
 
   const name = nameInput.value.trim();
@@ -143,28 +158,31 @@ form.addEventListener('submit', event => {
     return;
   }
 
-  if (editingId) {
-    const project = projects.find(item => item.id === editingId);
+  const isEditing = editingId !== null;
+  const url = isEditing ? `${API_URL}/${editingId}` : API_URL;
+  const method = isEditing ? UPDATE_METHOD : 'POST';
 
-    if (project) {
-      project.name = name;
-      project.status = status;
-    }
-  } else {
-    projects.push({
-      id: createId(),
-      name,
-      status
+  saveButton.disabled = true;
+
+  try {
+    await request(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, status })
     });
-  }
 
-  saveProjects();
-  renderProjects();
-  resetForm();
+    resetForm();
+    await loadProjects();
+    showMessage(isEditing ? 'Project updated.' : 'Project added.');
+  } catch (error) {
+    showMessage(`Could not save project: ${error.message}`);
+  } finally {
+    saveButton.disabled = false;
+  }
 });
 
 cancelButton.addEventListener('click', () => {
   resetForm();
 });
 
-renderProjects();
+loadProjects();
