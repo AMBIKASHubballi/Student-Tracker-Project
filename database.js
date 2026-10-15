@@ -1,22 +1,35 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-mkdirSync('data', { recursive: true });
-const connection = new DatabaseSync(process.env.DB_FILE || 'data/projects.db');
-connection.exec(`CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
-  status TEXT NOT NULL CHECK(status IN ('Planned', 'In Progress', 'Completed'))
-)`);
+import 'dotenv/config';
+import pg from 'pg';
+
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  max: 1
+});
+
 export const db = {
-  async list() { return connection.prepare('SELECT id, name, status FROM projects ORDER BY id DESC').all(); },
+  async list() {
+    const result = await pool.query(
+      'SELECT id, name, status FROM projects ORDER BY id DESC'
+    );
+    return result.rows;
+  },
   async create({ name, status }) {
-    const result = connection.prepare('INSERT INTO projects (name, status) VALUES (?, ?)').run(name, status);
-    return connection.prepare('SELECT id, name, status FROM projects WHERE id = ?').get(Number(result.lastInsertRowid));
+    const result = await pool.query(
+      'INSERT INTO projects (name, status) VALUES ($1, $2) RETURNING id, name, status',
+      [name, status]
+    );
+    return result.rows[0];
   },
   async update(id, { name, status }) {
-    const result = connection.prepare('UPDATE projects SET name = ?, status = ? WHERE id = ?').run(name, status, id);
-    if (!result.changes) return null;
-    return connection.prepare('SELECT id, name, status FROM projects WHERE id = ?').get(id);
+    const result = await pool.query(
+      'UPDATE projects SET name = $1, status = $2 WHERE id = $3 RETURNING id, name, status',
+      [name, status, id]
+    );
+    return result.rows[0] || null;
   },
-  async remove(id) { return connection.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0; }
+  async remove(id) {
+    const result = await pool.query('DELETE FROM projects WHERE id = $1', [id]);
+    return result.rowCount > 0;
+  }
 };
